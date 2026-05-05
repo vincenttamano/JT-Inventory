@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { UsageRecord } from '../types';
 import { toast } from 'sonner';
+import { deletePatientRecord, getPatientUsageHistory, updatePatientRecord } from '../services/patientService';
 
 type SortField = 'patientName' | 'procedure' | 'itemsUsed' | 'date';
 type SortDir = 'asc' | 'desc';
@@ -15,7 +16,7 @@ interface EditState {
   procedure: string;
 }
 
-export function PatientManagement() {
+export function PatientManagementPage() {
   const [records, setRecords] = useState<UsageRecord[]>([]);
   const [search, setSearch] = useState('');
   const [sortField, setSortField] = useState<SortField>('date');
@@ -23,18 +24,11 @@ export function PatientManagement() {
   const [editState, setEditState] = useState<EditState | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
-  // Load from localStorage
   useEffect(() => {
-    const stored = localStorage.getItem('usageHistory');
-    if (stored) {
-      setRecords(JSON.parse(stored));
-    }
+    getPatientUsageHistory()
+      .then(setRecords)
+      .catch((error) => toast.error(error.message || 'Failed to load patient records.'));
   }, []);
-
-  const persist = (updated: UsageRecord[]) => {
-    setRecords(updated);
-    localStorage.setItem('usageHistory', JSON.stringify(updated));
-  };
 
   // --- Search + Sort ---
   const totalItemsUsed = (r: UsageRecord) =>
@@ -89,7 +83,7 @@ export function PatientManagement() {
 
   const cancelEdit = () => setEditState(null);
 
-  const saveEdit = () => {
+  const saveEdit = async () => {
     if (!editState) return;
     if (!editState.patientName.trim()) {
       toast.error('Patient name cannot be empty');
@@ -99,14 +93,22 @@ export function PatientManagement() {
       toast.error('Procedure cannot be empty');
       return;
     }
-    const updated = records.map((r) =>
-      r.id === editState.id
-        ? { ...r, patientName: editState.patientName.trim(), procedure: editState.procedure.trim() }
-        : r
-    );
-    persist(updated);
-    setEditState(null);
-    toast.success('Patient record updated!');
+    try {
+      await updatePatientRecord(editState.id, {
+        patientName: editState.patientName.trim(),
+        procedure: editState.procedure.trim(),
+      });
+
+      setRecords(records.map((r) =>
+        r.id === editState.id
+          ? { ...r, patientName: editState.patientName.trim(), procedure: editState.procedure.trim() }
+          : r
+      ));
+      setEditState(null);
+      toast.success('Patient record updated!');
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to update patient record.');
+    }
   };
 
   // --- Delete ---
@@ -117,11 +119,15 @@ export function PatientManagement() {
 
   const cancelDelete = () => setDeleteConfirm(null);
 
-  const executeDelete = (id: string) => {
-    const updated = records.filter((r) => r.id !== id);
-    persist(updated);
-    setDeleteConfirm(null);
-    toast.success('Patient record deleted.');
+  const executeDelete = async (id: string) => {
+    try {
+      await deletePatientRecord(id);
+      setRecords(records.filter((r) => r.id !== id));
+      setDeleteConfirm(null);
+      toast.success('Patient record deleted.');
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to delete patient record.');
+    }
   };
 
   // --- Sort Icon helper ---

@@ -2,100 +2,46 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Lock, Mail, Activity, UserCircle, ShieldCheck } from 'lucide-react';
 import { UserRole } from '../types';
-import { supabase } from '../utils/supabase';
+import { loginWithCredentials, sendPasswordResetEmail } from '../services/authService';
 
-export function Login() {
+export function LoginPage() {
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState<UserRole>('staff');
   const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
+  const [resetLoading, setResetLoading] = useState(false);
   const navigate = useNavigate();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setMessage('');
     setLoading(true);
 
     try {
-      if (!identifier || !password) {
-        setError('Please enter both your email/username and password.');
-        return;
-      }
-
-      // First, fetch user from database to verify role and get their email for auth
-      // Test if we can read from the table at all
-      const { data: allUsers, error: testError } = await supabase
-        .from('User')
-        .select('*')
-        .limit(1);
-      
-      console.log('Test query (all users):', { allUsers, testError });
-
-      // Try to find by email first, then by username
-      let { data: users, error: fetchError } = await supabase
-        .from('User')
-        .select('*')
-        .eq('email', identifier);
-
-      console.log('Email query result:', { identifier, users, fetchError });
-
-      if (fetchError) {
-        console.error('Email query error:', fetchError);
-        // Don't throw, try username instead
-      }
-
-      if (!users || users.length === 0) {
-        // If not found by email, try by username
-        const { data: usersByName, error: nameError } = await supabase
-          .from('User')
-          .select('*')
-          .eq('username', identifier);
-        
-        console.log('Username query result:', { identifier, usersByName, nameError });
-
-        if (nameError) {
-          console.error('Username query error:', nameError);
-          throw nameError;
-        }
-        users = usersByName;
-      }
-
-      if (!users || users.length === 0) {
-        setError('User not found.');
-        setLoading(false);
-        return;
-      }
-
-      const user = users[0];
-
-      // Check if user's role matches selected role
-      if (user.role !== role) {
-        setError('Invalid role selection for this user.');
-        setLoading(false);
-        return;
-      }
-
-      // Verify password against the table
-      if (user.password !== password) {
-        setError('Invalid password.');
-        setLoading(false);
-        return;
-      }
-
-      // Store user session (without password)
-      const sessionUser = {
-        id: user.id,
-        name: user.username,
-        email: user.email,
-        role: user.role as UserRole,
-      };
-      localStorage.setItem('dentalClinicUser', JSON.stringify(sessionUser));
+      await loginWithCredentials({ identifier, password, role });
       navigate('/dashboard');
     } catch (err: any) {
       setError(err.message || 'An error occurred during login.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    setError('');
+    setMessage('');
+    setResetLoading(true);
+
+    try {
+      await sendPasswordResetEmail(identifier);
+      setMessage('Password reset email sent. Check your inbox.');
+    } catch (err: any) {
+      setError(err.message || 'Unable to send password reset email.');
+    } finally {
+      setResetLoading(false);
     }
   };
 
@@ -166,9 +112,19 @@ export function Login() {
           </div>
 
           <div>
-            <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-2">
-              Password
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label htmlFor="password" className="block text-sm font-medium text-gray-700">
+                Password
+              </label>
+              <button
+                type="button"
+                onClick={handleForgotPassword}
+                disabled={resetLoading}
+                className="text-sm font-medium text-gold-700 hover:text-gold-900 disabled:text-gray-400"
+              >
+                {resetLoading ? 'Sending...' : 'Forgot password?'}
+              </button>
+            </div>
             <div className="relative">
               <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
               <input
@@ -185,6 +141,12 @@ export function Login() {
           {error && (
             <div className="bg-red-50 text-red-700 p-3 rounded-lg text-sm">
               {error}
+            </div>
+          )}
+
+          {message && (
+            <div className="bg-green-50 text-green-700 p-3 rounded-lg text-sm">
+              {message}
             </div>
           )}
 

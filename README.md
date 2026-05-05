@@ -86,6 +86,16 @@ The application uses **Supabase (PostgreSQL)** as the backend database with real
 - **Cost Tracking**: Historical pricing preserved at time of consumption for accurate financial reporting
 - **Data Integrity**: Foreign keys prevent orphaned records; constraints block invalid operations (e.g., negative stock)
 
+1.  prevent_negative_quantity      → Inventory  | BEFORE UPDATE
+2.  check_stock_availability       → Usage      | BEFORE INSERT
+3.  fill_usage_details             → Usage      | BEFORE INSERT
+4.  set_recorded_by                → Patient    | BEFORE INSERT
+5.  deduct_inventory               → Usage      | AFTER INSERT
+6.  log_usage_transaction          → Usage      | AFTER INSERT
+7.  log_inventory_transaction      → Inventory  | AFTER UPDATE
+8.  log_low_stock                  → Inventory  | AFTER UPDATE
+9.  log_inventory_deletion         → Inventory  | BEFORE DELETE
+
 For complete table documentation, see **[DATABASE_TABLES_DOCUMENTATION.md](DATABASE_TABLES_DOCUMENTATION.md)** which includes column definitions, relationships, trigger behavior, and production migration notes.
 
 ## Troubleshooting

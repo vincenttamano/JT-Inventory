@@ -1,51 +1,41 @@
 import { useState, useEffect } from 'react';
 import { ShieldCheck, UserPlus, Trash2, Mail, Lock, User as UserIcon } from 'lucide-react';
-import { User, UserRole } from '../types';
+import { UserRole } from '../types';
+import { LocalUser, createUser, deleteUser, getUsers } from '../services/userService';
 
-export function UserManagement() {
-  const [users, setUsers] = useState<User[]>([]);
+export function UserManagementPage() {
+  
+  const [users, setUsers] = useState<LocalUser[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [formData, setFormData] = useState({ name: '', email: '', password: '', role: 'staff' as UserRole });
 
   useEffect(() => {
-    const storedUsers = localStorage.getItem('dentalClinicUsersList');
-    if (storedUsers) {
-      setUsers(JSON.parse(storedUsers));
-    } else {
-      // Initialize with default admin and test staff
-      const defaultUsers: User[] = [
-        { id: '1', name: 'admin', email: 'admin@dentalclinic.com', role: 'admin', password: 'admin' },
-        { id: '2', name: 'John Smith', email: 'john.smith@dentalclinic.com', role: 'staff', password: 'staff123' }
-      ];
-      setUsers(defaultUsers);
-      localStorage.setItem('dentalClinicUsersList', JSON.stringify(defaultUsers));
-    }
+    getUsers()
+      .then(setUsers)
+      .catch((error) => alert(error.message || 'Failed to load users.'));
   }, []);
 
-  const handleAddUser = (e: React.FormEvent) => {
+  const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
-    const newUser: User = {
-      id: Date.now().toString(),
-      name: formData.name,
-      email: formData.email,
-      role: formData.role,
-      password: formData.password
-    };
-    
-    const updatedUsers = [...users, newUser];
-    setUsers(updatedUsers);
-    localStorage.setItem('dentalClinicUsersList', JSON.stringify(updatedUsers));
-    
-    setShowModal(false);
-    setFormData({ name: '', email: '', password: '', role: 'staff' });
-    alert('Staff account created successfully!');
+    try {
+      const newUser = await createUser(formData);
+      setUsers([...users, newUser]);
+      setShowModal(false);
+      setFormData({ name: '', email: '', password: '', role: 'staff' });
+      alert('Staff account created successfully!');
+    } catch (error: any) {
+      alert(error.message || 'Failed to create staff account.');
+    }
   };
 
-  const handleDeleteUser = (id: string) => {
+  const handleDeleteUser = async (id: string) => {
     if (confirm('Are you sure you want to delete this user?')) {
-      const updatedUsers = users.filter(u => u.id !== id);
-      setUsers(updatedUsers);
-      localStorage.setItem('dentalClinicUsersList', JSON.stringify(updatedUsers));
+      try {
+        await deleteUser(id);
+        setUsers(users.filter(u => u.id !== id));
+      } catch (error: any) {
+        alert(error.message || 'Failed to delete user.');
+      }
     }
   };
 

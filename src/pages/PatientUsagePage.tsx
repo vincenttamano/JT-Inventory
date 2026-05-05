@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
 import { Plus, Trash2, Save, User, Calendar, FileText, CheckCircle, Package } from 'lucide-react';
 import { InventoryItem, UsageRecord, UsageItem } from '../types';
-import { initializeInventory, saveInventory } from '../utils/mockData';
+import { getInventory, saveInventory } from '../services/inventoryService';
+import { getCurrentUser } from '../services/authService';
+import { createPatientUsageRecord, getPatientUsageHistory } from '../services/patientService';
 import { toast } from 'sonner';
 
-export function PatientUsage() {
+export function PatientUsagePage() {
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [usageHistory, setUsageHistory] = useState<UsageRecord[]>([]);
   const [patientConsent, setPatientConsent] = useState(false);
@@ -16,11 +18,12 @@ export function PatientUsage() {
   const [showHistory, setShowHistory] = useState(false);
 
   useEffect(() => {
-    setInventory(initializeInventory());
-    const storedHistory = localStorage.getItem('usageHistory');
-    if (storedHistory) {
-      setUsageHistory(JSON.parse(storedHistory));
-    }
+    const load = async () => {
+      setInventory(await getInventory());
+      setUsageHistory(await getPatientUsageHistory());
+    };
+
+    load().catch((error) => toast.error(error.message || 'Failed to load patient usage data.'));
   }, []);
 
   const addItemRow = () => {
@@ -57,7 +60,7 @@ export function PatientUsage() {
     setSelectedItems(updated);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     // Validation
@@ -110,27 +113,24 @@ export function PatientUsage() {
       return item;
     });
 
-    // Create usage record
-    const user = JSON.parse(localStorage.getItem('dentalClinicUser') || '{}');
-    const newRecord: UsageRecord = {
-      id: Date.now().toString(),
-      patientConsent,
-      patientName,
-      patientId,
-      procedure: procedure.trim(),
-      date: new Date().toISOString(),
-      items: selectedItems,
-      recordedBy: user.name || 'Unknown',
-      notes: notes.trim() || undefined,
-    };
+    const user = getCurrentUser();
 
-    // Save data
-    const updatedHistory = [newRecord, ...usageHistory];
-    setUsageHistory(updatedHistory);
-    localStorage.setItem('usageHistory', JSON.stringify(updatedHistory));
-    
-    setInventory(updatedInventory);
-    saveInventory(updatedInventory);
+    try {
+      const newRecord = await createPatientUsageRecord({
+        patientConsent,
+        patientName,
+        procedure: procedure.trim(),
+        recordedByUserId: user?.id,
+        items: selectedItems,
+      });
+
+      await saveInventory(updatedInventory);
+      setUsageHistory([newRecord, ...usageHistory]);
+      setInventory(updatedInventory);
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to save usage record.');
+      return;
+    }
 
     // Reset form
     setPatientConsent(false);

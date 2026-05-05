@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
 import { Plus, Search, X, Calendar, Package, Trash2, Edit2 } from 'lucide-react';
-import { InventoryItem, SimpleUsageRecord, User } from '../types';
-import { initializeInventory, saveInventory } from '../utils/mockData';
+import { InventoryItem, SimpleUsageRecord } from '../types';
+import { getInventory, saveInventory } from '../services/inventoryService';
+import { getCurrentUser } from '../services/authService';
+import { createSimpleUsageRecord, deleteSimpleUsageRecord, getSimpleUsageHistory } from '../services/usageService';
 
-export function Usage() {
+export function UsagePage() {
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [usageHistory, setUsageHistory] = useState<SimpleUsageRecord[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -17,37 +19,20 @@ export function Usage() {
   const [editingRecordId, setEditingRecordId] = useState<string | null>(null);
 
   useEffect(() => {
-    setInventory(initializeInventory());
-    loadUsageHistory();
+    const load = async () => {
+      setInventory(await getInventory());
+      setUsageHistory(await getSimpleUsageHistory());
 
-    const userData = localStorage.getItem('dentalClinicUser');
-    if (userData) {
-      const user: User = JSON.parse(userData);
-      setUserRole(user.role);
-    }
+      const user = getCurrentUser();
+      if (user) {
+        setUserRole(user.role);
+      }
+    };
+
+    load().catch((error) => alert(error.message || 'Failed to load usage data.'));
   }, []);
 
   const isAdmin = userRole === 'admin';
-
-  const loadUsageHistory = () => {
-    const stored = localStorage.getItem('dentalClinicUsageHistory');
-    if (stored) {
-      const parsed = JSON.parse(stored) as SimpleUsageRecord[];
-      setUsageHistory(
-        parsed.map((record) => ({
-          ...record,
-          procedure: record.procedure || 'Not specified',
-          patientConsent: record.patientConsent ?? false,
-          patientName: record.patientName || 'Anonymous Patient',
-        }))
-      );
-    }
-  };
-
-  const saveUsageHistory = (history: SimpleUsageRecord[]) => {
-    localStorage.setItem('dentalClinicUsageHistory', JSON.stringify(history));
-    setUsageHistory(history);
-  };
 
   const handleAddItem = (itemId: string) => {
     const exists = selectedItems.find(item => item.itemId === itemId);
@@ -77,7 +62,7 @@ export function Usage() {
     }, 500);
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (selectedItems.length === 0) {
       alert('Please select at least one item');
       return;
@@ -120,9 +105,8 @@ export function Usage() {
       return item;
     });
 
-    // Create usage record
-    const newRecord: SimpleUsageRecord = {
-      id: editingRecordId || Date.now().toString(),
+    const recordPayload: SimpleUsageRecord = {
+      id: editingRecordId || '',
       date: date,
       procedure: procedure.trim(),
       patientConsent,
@@ -139,14 +123,24 @@ export function Usage() {
     };
 
     // Save updates
-    setInventory(updatedInventory);
-    saveInventory(updatedInventory);
-    
-    if (editingRecordId) {
-      saveUsageHistory(usageHistory.map(r => r.id === editingRecordId ? newRecord : r));
-    } else {
-      saveUsageHistory([newRecord, ...usageHistory]);
-      sendAdminNotificationEmail(newRecord);
+    try {
+      if (editingRecordId) {
+        await deleteSimpleUsageRecord(editingRecordId);
+      }
+
+      const savedRecord = await createSimpleUsageRecord(recordPayload, getCurrentUser()?.id);
+      await saveInventory(updatedInventory);
+      setInventory(updatedInventory);
+
+      if (editingRecordId) {
+        setUsageHistory([savedRecord, ...usageHistory.filter(r => r.id !== editingRecordId)]);
+      } else {
+        setUsageHistory([savedRecord, ...usageHistory]);
+        sendAdminNotificationEmail(savedRecord);
+      }
+    } catch (error: any) {
+      alert(error.message || 'Failed to save usage record.');
+      return;
     }
 
     // Reset form
@@ -169,7 +163,7 @@ export function Usage() {
     setIsModalOpen(true);
   };
 
-  const handleDeleteUsage = (recordId: string) => {
+  const handleDeleteUsage = async (recordId: string) => {
     if (!window.confirm('Are you sure you want to delete this usage record? The used items will be restored to inventory.')) return;
 
     const recordToDelete = usageHistory.find(r => r.id === recordId);
@@ -184,12 +178,14 @@ export function Usage() {
       }
     });
 
-    setInventory(updatedInventory);
-    saveInventory(updatedInventory);
-
-    // Remove from history
-    const updatedHistory = usageHistory.filter(r => r.id !== recordId);
-    saveUsageHistory(updatedHistory);
+    try {
+      await deleteSimpleUsageRecord(recordId);
+      await saveInventory(updatedInventory);
+      setInventory(updatedInventory);
+      setUsageHistory(usageHistory.filter(r => r.id !== recordId));
+    } catch (error: any) {
+      alert(error.message || 'Failed to delete usage record.');
+    }
   };
 
   const filteredInventory = inventory.filter(item =>

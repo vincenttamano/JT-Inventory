@@ -1,23 +1,25 @@
 import { useState, useEffect } from 'react';
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { TrendingUp, Package, AlertTriangle, Calendar } from 'lucide-react';
-import { InventoryItem, User } from '../types';
-import { initializeInventory, mockExpenseData } from '../utils/mockData';
+import { InventoryItem } from '../types';
+import { getInventory } from '../services/inventoryService';
+import { getCurrentUser } from '../services/authService';
 
-export function Dashboard() {
+export function DashboardPage() {
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [timeframe, setTimeframe] = useState<'week' | 'month' | 'year'>('month');
   const [userRole, setUserRole] = useState<'admin' | 'staff'>('staff');
 
   useEffect(() => {
-    setInventory(initializeInventory());
-    
-    // Get user role from localStorage
-    const userData = localStorage.getItem('dentalClinicUser');
-    if (userData) {
-      const user: User = JSON.parse(userData);
-      setUserRole(user.role);
-    }
+    const load = async () => {
+      setInventory(await getInventory());
+      const user = getCurrentUser();
+      if (user) {
+        setUserRole(user.role);
+      }
+    };
+
+    load().catch((error) => console.error('Failed to load dashboard data:', error));
   }, []);
 
   // Calculate inventory summary by category
@@ -34,20 +36,35 @@ export function Dashboard() {
   // Original vibrant colors for charts
   const COLORS = ['#3b82f6', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b', '#ef4444'];
 
+  const expenseData = inventory.reduce((acc, item) => {
+    const date = item.dateCreated ? new Date(item.dateCreated) : new Date();
+    const month = date.toLocaleString('en-US', { month: 'short' });
+    const existing = acc.find((entry) => entry.month === month);
+    const amount = item.quantity * item.price;
+
+    if (existing) {
+      existing.amount += amount;
+    } else {
+      acc.push({ month, amount });
+    }
+
+    return acc;
+  }, [] as { month: string; amount: number }[]);
+
   // Filter expense data based on timeframe
   const getExpenseData = () => {
     switch (timeframe) {
       case 'week':
-        return mockExpenseData.slice(-1).map((item, index) => ({
+        return expenseData.slice(-1).map((item, index) => ({
           ...item,
           month: `Week ${index + 1}`,
         }));
       case 'month':
-        return mockExpenseData.slice(-3);
+        return expenseData.slice(-3);
       case 'year':
-        return mockExpenseData;
+        return expenseData;
       default:
-        return mockExpenseData;
+        return expenseData;
     }
   };
 
@@ -62,7 +79,7 @@ export function Dashboard() {
     return daysUntilExpiry <= 60 && daysUntilExpiry > 0;
   });
 
-  const thisMonthExpense = mockExpenseData[mockExpenseData.length - 1].amount;
+  const thisMonthExpense = expenseData[expenseData.length - 1]?.amount || 0;
 
   const StatCard = ({ title, value, icon: Icon, colorClass, bgClass, isDark = false }: any) => (
     <div className={`${isDark ? 'bg-gradient-to-br from-dark-900 to-dark-800 text-white' : 'bg-white'} p-5 sm:p-6 rounded-2xl shadow-lg border ${isDark ? 'border-dark-700' : 'border-gray-100'} transition-transform hover:-translate-y-1 duration-300`}>
@@ -112,7 +129,7 @@ export function Dashboard() {
           <div className="bg-white p-5 sm:p-7 rounded-2xl shadow-lg border border-gray-100">
             <h2 className="text-xl font-bold text-dark-900 mb-6">Monthly Cost Overview</h2>
             <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={mockExpenseData}>
+              <BarChart data={expenseData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
                 <XAxis dataKey="month" stroke="#888" style={{ fontSize: '12px' }} axisLine={false} tickLine={false} />
                 <YAxis stroke="#888" style={{ fontSize: '12px' }} axisLine={false} tickLine={false} />

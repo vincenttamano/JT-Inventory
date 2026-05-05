@@ -1,49 +1,16 @@
 import { useState, useEffect } from 'react';
 import { X, Plus, Tag } from 'lucide-react';
-import { InventoryItem } from '../types';
+import { InventoryItem } from '../../types';
+import { getCategories, saveCustomCategory } from '../../services/categoryService';
 
-interface AddEditModalProps {
+interface InventoryItemModalProps {
   item: InventoryItem | null;
   onSave: (item: InventoryItem) => void;
   onClose: () => void;
 }
 
-const DEFAULT_CATEGORIES = [
-  'Anesthetics',
-  'PPE',
-  'Restorative',
-  'Disinfectants',
-  'Instruments',
-  'Consumables',
-  'Preventive',
-  'Other',
-];
-
-const STORAGE_KEY = 'dentalCustomCategories';
-
-function loadCategories(): string[] {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      const custom: string[] = JSON.parse(stored);
-      return Array.from(new Set([...DEFAULT_CATEGORIES, ...custom]));
-    }
-  } catch {}
-  return DEFAULT_CATEGORIES;
-}
-
-function saveCustomCategory(name: string) {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    const existing: string[] = stored ? JSON.parse(stored) : [];
-    if (!existing.includes(name)) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify([...existing, name]));
-    }
-  } catch {}
-}
-
-export function AddEditModal({ item, onSave, onClose }: AddEditModalProps) {
-  const [categories, setCategories] = useState<string[]>(loadCategories());
+export function InventoryItemModal({ item, onSave, onClose }: InventoryItemModalProps) {
+  const [categories, setCategories] = useState<string[]>(getCategories());
   const [addingCategory, setAddingCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
 
@@ -80,7 +47,7 @@ export function AddEditModal({ item, onSave, onClose }: AddEditModalProps) {
     e.preventDefault();
     onSave({
       ...formData,
-      id: item?.id || Date.now().toString(),
+      id: item?.id || '',
       dateCreated: item?.dateCreated || new Date().toISOString().split('T')[0],
     });
   };

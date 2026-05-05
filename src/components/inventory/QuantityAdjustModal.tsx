@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { X, Plus, Minus } from 'lucide-react';
-import { InventoryItem } from '../types';
+import { InventoryItem } from '../../types';
 
 interface QuantityAdjustModalProps {
   item: InventoryItem;

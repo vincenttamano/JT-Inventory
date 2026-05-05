@@ -4,62 +4,12 @@ import {
   Home, Package, BarChart3, LogOut, Menu, X,
   ClipboardCheck, Activity, Users, Bell, AlertTriangle, Clock, UserCog
 } from 'lucide-react';
-import { User, InventoryItem } from '../types';
-import { initializeInventory } from '../utils/mockData';
+import { User } from '../../types';
+import { getInventory } from '../../services/inventoryService';
+import { clearCurrentUser, getCurrentUser } from '../../services/authService';
+import { AlertNotification, buildInventoryAlerts } from '../../utils/alertCalculations';
 
-interface AlertNotification {
-  id: string;
-  type: 'low_stock' | 'expiring';
-  message: string;
-  productName: string;
-  severity: 'warning' | 'critical';
-}
-
-function buildAlerts(inventory: InventoryItem[]): AlertNotification[] {
-  const today = new Date();
-  const alerts: AlertNotification[] = [];
-
-  inventory.forEach((item) => {
-    // Low stock
-    if (item.quantity <= item.lowStockThreshold) {
-      alerts.push({
-        id: `low-${item.id}`,
-        type: 'low_stock',
-        productName: item.productName,
-        message: `${item.quantity} ${item.unit} remaining (threshold: ${item.lowStockThreshold})`,
-        severity: item.quantity === 0 ? 'critical' : 'warning',
-      });
-    }
-
-    // Expiring
-    const expiry = new Date(item.expiryDate);
-    const daysLeft = Math.floor((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-    if (daysLeft <= 60 && daysLeft > 0) {
-      alerts.push({
-        id: `exp-${item.id}`,
-        type: 'expiring',
-        productName: item.productName,
-        message: `Expires in ${daysLeft} day${daysLeft !== 1 ? 's' : ''}`,
-        severity: daysLeft <= 14 ? 'critical' : 'warning',
-      });
-    } else if (daysLeft <= 0) {
-      alerts.push({
-        id: `exp-${item.id}`,
-        type: 'expiring',
-        productName: item.productName,
-        message: `Expired ${Math.abs(daysLeft)} day${Math.abs(daysLeft) !== 1 ? 's' : ''} ago`,
-        severity: 'critical',
-      });
-    }
-  });
-
-  // Sort: critical first
-  return alerts.sort((a, b) =>
-    a.severity === 'critical' && b.severity !== 'critical' ? -1 : 1
-  );
-}
-
-export function Layout() {
+export function AppLayout() {
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [user, setUser] = useState<User | null>(null);
@@ -68,22 +18,23 @@ export function Layout() {
   const notifRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const userData = localStorage.getItem('dentalClinicUser');
-    if (!userData) {
+    const currentUser = getCurrentUser();
+    if (!currentUser) {
       navigate('/');
     } else {
-      setUser(JSON.parse(userData));
+      setUser(currentUser);
     }
   }, [navigate]);
 
   // Load inventory and compute alerts
   useEffect(() => {
     const compute = () => {
-      const inv = initializeInventory();
-      setAlerts(buildAlerts(inv));
+      getInventory()
+        .then((inv) => setAlerts(buildInventoryAlerts(inv)))
+        .catch((error) => console.error('Failed to load inventory alerts:', error));
     };
     compute();
-    // Refresh alerts whenever localStorage changes (e.g. after save)
+    // Refresh alerts when another tab changes persisted inventory data.
     const handler = () => compute();
     window.addEventListener('storage', handler);
     // Also poll every 30s in case same-tab updates
@@ -106,7 +57,7 @@ export function Layout() {
   }, []);
 
   const handleLogout = () => {
-    localStorage.removeItem('dentalClinicUser');
+    clearCurrentUser();
     navigate('/');
   };
 

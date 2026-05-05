@@ -4,30 +4,34 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts';
 import { Package, TrendingUp, AlertCircle, ShieldAlert, ShoppingBag, Download } from 'lucide-react';
-import { InventoryItem, UsageRecord, User } from '../types';
-import { initializeInventory } from '../utils/mockData';
+import { InventoryItem, UsageRecord } from '../types';
+import { getInventory } from '../services/inventoryService';
+import { getCurrentUser } from '../services/authService';
+import { getPatientUsageHistory } from '../services/patientService';
 
-export function Analytics() {
+export function AnalyticsPage() {
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [patientUsageHistory, setPatientUsageHistory] = useState<UsageRecord[]>([]);
   const [userRole, setUserRole] = useState<'admin' | 'staff'>('staff');
   const [reportPeriod, setReportPeriod] = useState<'week' | 'month' | 'year'>('month');
 
   useEffect(() => {
-    setInventory(initializeInventory());
+    const load = async () => {
+      const user = getCurrentUser();
+      if (user) {
+        setUserRole(user.role);
+      }
 
-    const storedPatientUsage = localStorage.getItem('usageHistory');
-    if (storedPatientUsage) {
-      const parsedUsage = JSON.parse(storedPatientUsage) as UsageRecord[];
-      setPatientUsageHistory(parsedUsage);
-    }
+      const [inventoryData, patientUsageData] = await Promise.all([
+        getInventory(),
+        getPatientUsageHistory(),
+      ]);
 
-    // Get user role from localStorage
-    const userData = localStorage.getItem('dentalClinicUser');
-    if (userData) {
-      const user: User = JSON.parse(userData);
-      setUserRole(user.role);
-    }
+      setInventory(inventoryData);
+      setPatientUsageHistory(patientUsageData);
+    };
+
+    load().catch((error) => console.error('Failed to load analytics data:', error));
   }, []);
 
   // If user is staff, show access denied message
