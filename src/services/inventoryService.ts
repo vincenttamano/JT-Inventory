@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabaseClient';
-import { InventoryItem } from '../types';
+import { InventoryItem, InventoryUpdateHistory } from '../types';
 
 interface InventoryRow {
   inventory_id: number;
@@ -13,6 +13,16 @@ interface InventoryRow {
   restocked_by_user_id: number | null;
   last_restocked_at: string | null;
   category: string;
+}
+
+interface TransactionLogRow {
+  transaction_log_id: number;
+  table_name: string;
+  row_id: number;
+  operation: string;
+  before_value: Record<string, any> | null;
+  after_value: Record<string, any> | null;
+  changed_at: string;
 }
 
 function mapInventoryRow(row: InventoryRow): InventoryItem {
@@ -39,6 +49,36 @@ function mapInventoryItem(item: InventoryItem) {
     low_stock_threshold: item.lowStockThreshold,
     price: item.price,
     created_at: item.dateCreated ? new Date(item.dateCreated).toISOString() : new Date().toISOString(),
+  };
+}
+
+function readNumber(value: unknown, fallback = 0): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function mapInventoryHistoryRow(row: TransactionLogRow): InventoryUpdateHistory {
+  const beforeValue = row.before_value || {};
+  const afterValue = row.after_value || {};
+  const quantityBefore = readNumber(beforeValue.quantity);
+  const quantityAfter = readNumber(afterValue.quantity, quantityBefore);
+  const productName = String(
+    afterValue.item_name ||
+    beforeValue.item_name ||
+    `Inventory item #${row.row_id}`
+  );
+  const unit = String(afterValue.unit_type || beforeValue.unit_type || 'units');
+
+  return {
+    id: row.transaction_log_id.toString(),
+    itemId: row.row_id.toString(),
+    productName,
+    unit,
+    operation: row.operation,
+    quantityBefore,
+    quantityAfter,
+    quantityChange: quantityAfter - quantityBefore,
+    changedAt: row.changed_at,
   };
 }
 
@@ -97,6 +137,53 @@ export async function saveInventoryItem(item: InventoryItem): Promise<InventoryI
   }
 
   return mapInventoryRow(data as InventoryRow);
+}
+
+export async function updateInventoryQuantity(
+  item: InventoryItem,
+  newQuantity: number,
+  userId?: string
+): Promise<InventoryItem> {
+  const restockFields = newQuantity > item.quantity
+    ? {
+        restocked_by_user_id: userId ? Number(userId) : null,
+        last_restocked_at: new Date().toISOString(),
+      }
+    : {};
+
+  const { data, error } = await supabase
+    .from('inventory_items')
+    .update({
+      quantity: newQuantity,
+      ...restockFields,
+    })
+    .eq('inventory_id', Number(item.id))
+    .select()
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  return mapInventoryRow(data as InventoryRow);
+}
+
+export async function getInventoryUpdateHistory(): Promise<InventoryUpdateHistory[]> {
+  const { data, error } = await supabase
+    .from('transaction_log')
+    .select('transaction_log_id, table_name, row_id, operation, before_value, after_value, changed_at')
+    .eq('table_name', 'inventory_items')
+    .eq('operation', 'UPDATE')
+    .order('changed_at', { ascending: false })
+    .limit(25);
+
+  if (error) {
+    throw error;
+  }
+
+  return ((data || []) as TransactionLogRow[])
+    .map(mapInventoryHistoryRow)
+    .filter((entry) => entry.quantityChange !== 0);
 }
 
 export async function deleteInventoryItem(id: string): Promise<void> {

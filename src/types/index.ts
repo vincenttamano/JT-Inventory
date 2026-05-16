@@ -10,6 +10,18 @@ export interface InventoryItem {
   dateCreated: string;
 }
 
+export interface InventoryUpdateHistory {
+  id: string;
+  itemId: string;
+  productName: string;
+  unit: string;
+  operation: string;
+  quantityBefore: number;
+  quantityAfter: number;
+  quantityChange: number;
+  changedAt: string;
+}
+
 export interface ExpenseData {
   month: string;
   amount: number;

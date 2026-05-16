@@ -1,7 +1,13 @@
 import { useState, useEffect } from 'react';
-import { Plus, Search, Edit2, Trash2, Filter, Package } from 'lucide-react';
-import { InventoryItem } from '../types';
-import { deleteInventoryItem, getInventory, saveInventory, saveInventoryItem } from '../services/inventoryService';
+import { Plus, Search, Edit2, Trash2, Filter, Package, History } from 'lucide-react';
+import { InventoryItem, InventoryUpdateHistory } from '../types';
+import {
+  deleteInventoryItem,
+  getInventory,
+  getInventoryUpdateHistory,
+  saveInventoryItem,
+  updateInventoryQuantity,
+} from '../services/inventoryService';
 import { getCurrentUser } from '../services/authService';
 import { InventoryItemModal } from '../components/inventory/InventoryItemModal';
 import { QuantityAdjustModal } from '../components/inventory/QuantityAdjustModal';
@@ -15,11 +21,17 @@ export function InventoryPage() {
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
   const [userRole, setUserRole] = useState<'admin' | 'staff'>('staff');
+  const [updateHistory, setUpdateHistory] = useState<InventoryUpdateHistory[]>([]);
 
   useEffect(() => {
     const load = async () => {
       try {
-        setInventory(await getInventory());
+        const [inventoryItems, history] = await Promise.all([
+          getInventory(),
+          getInventoryUpdateHistory(),
+        ]);
+        setInventory(inventoryItems);
+        setUpdateHistory(history);
         const user = getCurrentUser();
         if (user) {
           setUserRole(user.role);
@@ -70,6 +82,7 @@ export function InventoryPage() {
   const handleSave = async (item: InventoryItem) => {
     try {
       const savedItem = await saveInventoryItem(item);
+      setUpdateHistory(await getInventoryUpdateHistory());
       const updatedInventory = editingItem
         ? inventory.map(i => (i.id === savedItem.id ? savedItem : i))
         : [savedItem, ...inventory];
@@ -82,15 +95,16 @@ export function InventoryPage() {
   };
 
   const handleQuantityAdjust = async (item: InventoryItem, newQuantity: number) => {
-    const updatedInventory = inventory.map(i =>
-      i.id === item.id ? { ...i, quantity: newQuantity } : i
-    );
-
     try {
-      await saveInventory(updatedInventory);
+      const currentUser = getCurrentUser();
+      const savedItem = await updateInventoryQuantity(item, newQuantity, currentUser?.id);
+      const updatedInventory = inventory.map(i =>
+        i.id === savedItem.id ? savedItem : i
+      );
       setInventory(updatedInventory);
+      setUpdateHistory(await getInventoryUpdateHistory());
       setIsQuantityModalOpen(false);
-      setSelectedItem(updatedInventory.find(i => i.id === item.id) || null);
+      setSelectedItem(savedItem);
     } catch (error: any) {
       alert(error.message || 'Failed to adjust quantity.');
     }
@@ -363,6 +377,92 @@ export function InventoryPage() {
               </div>
             );
           })}
+        </div>
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div className="p-4 sm:p-6 border-b border-gray-200 flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg sm:text-xl font-bold text-gray-900">Restock Inventory History</h2>
+            <p className="text-sm text-gray-500 mt-1">Recent inventory quantity updates from the transaction log</p>
+          </div>
+          <div className="p-2 bg-gold-100 rounded-lg text-gold-700">
+            <History className="w-5 h-5" />
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-gray-50/80">
+              <tr>
+                <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Product
+                </th>
+                <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Type
+                </th>
+                <th className="hidden sm:table-cell px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Before
+                </th>
+                <th className="hidden sm:table-cell px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  After
+                </th>
+                <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Change
+                </th>
+                <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Date
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {updateHistory.map((entry) => {
+                const isRestock = entry.quantityChange > 0;
+
+                return (
+                  <tr key={entry.id} className="hover:bg-gray-50/80 transition-colors">
+                    <td className="px-3 sm:px-6 py-4">
+                      <div className="text-xs sm:text-sm font-medium text-gray-900">{entry.productName}</div>
+                      <div className="sm:hidden text-xs text-gray-500 mt-1">
+                        {entry.quantityBefore} to {entry.quantityAfter} {entry.unit}
+                      </div>
+                    </td>
+                    <td className="px-3 sm:px-6 py-4 whitespace-nowrap">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                        isRestock
+                          ? 'bg-green-100 text-green-800'
+                          : 'bg-orange-100 text-orange-800'
+                      }`}>
+                        {isRestock ? 'Restock' : 'Adjustment'}
+                      </span>
+                    </td>
+                    <td className="hidden sm:table-cell px-3 sm:px-6 py-4 whitespace-nowrap text-xs sm:text-sm text-gray-700">
+                      {entry.quantityBefore} {entry.unit}
+                    </td>
+                    <td className="hidden sm:table-cell px-3 sm:px-6 py-4 whitespace-nowrap text-xs sm:text-sm text-gray-700">
+                      {entry.quantityAfter} {entry.unit}
+                    </td>
+                    <td className="px-3 sm:px-6 py-4 whitespace-nowrap">
+                      <span className={`text-xs sm:text-sm font-bold ${
+                        isRestock ? 'text-green-700' : 'text-orange-700'
+                      }`}>
+                        {entry.quantityChange > 0 ? '+' : ''}{entry.quantityChange} {entry.unit}
+                      </span>
+                    </td>
+                    <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-xs sm:text-sm text-gray-600">
+                      {new Date(entry.changedAt).toLocaleString()}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+
+          {updateHistory.length === 0 && (
+            <div className="text-center py-10 text-gray-500">
+              No inventory updates recorded yet
+            </div>
+          )}
         </div>
       </div>
 
